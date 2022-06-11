@@ -30,6 +30,7 @@ func NewStub(a *authenticator.A) *Stub {
 
 	r.GET("/listen{access_key}", s.listen)
 	r.POST("/post{access_key}", s.post)
+	r.GET("/ws_listen{access_key}", s.listenWS)
 
 	return s
 }
