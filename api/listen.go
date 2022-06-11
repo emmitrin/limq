@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"github.com/valyala/fasthttp"
 	"io"
 	"net/http"
@@ -35,9 +36,11 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 	}
 
 	timeout := time.Duration(seconds) * time.Second
+	listenCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
 	{
-		m := stub.q.ListenWithTimeout(auth.Tag, timeout)
+		m := stub.q.Listen(listenCtx, auth.Tag)
 		if m == nil {
 			ctx.SetStatusCode(http.StatusNotModified)
 			return

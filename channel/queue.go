@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -91,9 +92,7 @@ func (gq *GlobalQueue) PostImmediately(m *Message) (ok bool) {
 	return true
 }
 
-func (gq *GlobalQueue) ListenWithTimeout(tag string, to time.Duration) (m *Message) {
-	t := time.NewTimer(to)
-
+func (gq *GlobalQueue) Listen(ctx context.Context, tag string) (m *Message) {
 	streamHandler := gq.acquire(tag)
 
 	// todo make peer identification to solve the re-post issue
@@ -103,12 +102,10 @@ func (gq *GlobalQueue) ListenWithTimeout(tag string, to time.Duration) (m *Messa
 	queue := streamHandler.ch()
 
 	select {
-	case <-t.C:
+	case <-ctx.Done():
 		return nil
 
 	case val := <-queue:
-		t.Stop()
-
 		return val
 	}
 }
