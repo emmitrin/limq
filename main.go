@@ -17,6 +17,7 @@ func main() {
 	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	logger, _ := config.Build()
 	zap.ReplaceGlobals(logger)
+	defer logger.Sync()
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",

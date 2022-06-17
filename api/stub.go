@@ -22,7 +22,7 @@ var strApplicationJSON = []byte("application/json")
 func NewStub(a *authenticator.A) *Stub {
 	s := &Stub{
 		a: a,
-		q: channel.NewGQ(),
+		q: channel.NewGQ(a.CreateMixinManager()),
 	}
 
 	r := router.New()

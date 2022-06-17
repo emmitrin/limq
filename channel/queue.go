@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	"go.uber.org/zap"
+	"limq/internal/set"
 	"sync"
 	"time"
 )
@@ -13,14 +15,16 @@ const (
 
 // GlobalQueue works in a multicast mode and holds buffered data in the process' memory
 type GlobalQueue struct {
-	mu *sync.Mutex
-	wm map[string]stream
+	mu   *sync.Mutex
+	wm   map[string]stream
+	mman MixinManager
 }
 
-func NewGQ() *GlobalQueue {
+func NewGQ(mman MixinManager) *GlobalQueue {
 	return &GlobalQueue{
-		mu: &sync.Mutex{},
-		wm: map[string]stream{},
+		mu:   &sync.Mutex{},
+		wm:   map[string]stream{},
+		mman: mman,
 	}
 }
 
@@ -120,4 +124,36 @@ func (gq *GlobalQueue) QueueSize(tag string) int {
 	}
 
 	return len(s.ch())
+}
+
+func (gq *GlobalQueue) repost(visited *set.Set[string], tag string, m Message, postToThis bool) {
+	if visited.Has(tag) {
+		zap.L().Warn("repost for mixed-in channel: circular dependency detected", zap.String("chan_id", tag))
+		return
+	}
+
+	m.ChannelID = tag
+
+	if postToThis {
+		ok := gq.PostImmediately(&m)
+
+		if !ok {
+			zap.L().Warn("unable to post to mixed-in channel", zap.String("chan_id", tag))
+		}
+	}
+
+	visited.Add(tag)
+	tags := gq.mman.GetForwards(tag)
+
+	for _, t := range tags {
+		gq.repost(visited, t, m, true)
+	}
+}
+
+func (gq *GlobalQueue) PostImmediatelyWithMixins(tag string, m *Message) (ok bool) {
+	ok = gq.PostImmediately(m)
+
+	go gq.repost(set.NewSet[string](nil), tag, *m, false)
+
+	return
 }

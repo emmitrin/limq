@@ -30,7 +30,7 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		m.Payload = make([]byte, len(body))
 		copy(m.Payload, body)
 
-		ok := stub.q.PostImmediately(m)
+		ok := stub.q.PostImmediatelyWithMixins(auth.Tag, m)
 
 		if ok {
 			response := struct{ hasCode }{}

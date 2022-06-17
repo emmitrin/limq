@@ -24,7 +24,8 @@ func (a *A) CheckAccessKey(key string) Descriptor {
 		return Descriptor{}
 	}
 
-	d := Descriptor{Tag: result[tagRedisKey], Flags: parseAccessLevel(result[permRedisKey])}
+	d := Descriptor{Tag: result[tagRedisKey],
+		Flags: parseAccessLevel(result[permRedisKey])}
 
 	return d
 }
