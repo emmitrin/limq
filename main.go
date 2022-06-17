@@ -13,16 +13,26 @@ import (
 )
 
 func main() {
-	config := zap.NewDevelopmentConfig()
-	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	logger, _ := config.Build()
-	zap.ReplaceGlobals(logger)
-	defer logger.Sync()
+
+	{
+		var config zap.Config
+
+		if len(os.Getenv("DEBUG")) > 0 {
+			config = zap.NewDevelopmentConfig()
+		} else {
+			config = zap.NewProductionConfig()
+		}
+
+		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		logger, _ := config.Build()
+		zap.ReplaceGlobals(logger)
+		defer logger.Sync()
+	}
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       3,  // use default DB
+		Addr:     envOrDefault("REDIS", "localhost:6379"),
+		Password: envOrDefault("REDIS_PASSWORD", ""),
+		DB:       envIntOrDefault("REDIS_DB", 3),
 	})
 
 	authManager := authenticator.NewA(rdb)
