@@ -10,10 +10,6 @@ import (
 
 var upgrader = websocket.FastHTTPUpgrader{} // use default options
 
-func (stub *Stub) listenWSHandler(conn *websocket.Conn) {
-	//
-}
-
 func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
