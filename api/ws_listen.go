@@ -47,7 +47,7 @@ func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 		}()
 
 		for {
-			m := stub.q.Listen(listenerContext, auth.Tag)
+			m := stub.br.Listen(listenerContext, auth.Tag)
 			if m == nil {
 				if listenerContext.Err() == nil {
 					zap.L().Warn("invalid nil message", zap.String("tag", auth.Tag))

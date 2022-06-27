@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
-	"limq/channel"
+	"limq/broker"
 	"limq/common"
 	"time"
 )
@@ -35,6 +35,6 @@ func (m *mmanImplement) GetForwards(tag string) []string {
 	return m.a.GetForwardDestinations(Descriptor{Tag: tag})
 }
 
-func (a *A) CreateMixinManager() channel.MixinManager {
+func (a *A) CreateMixinManager() broker.MixinManager {
 	return &mmanImplement{a}
 }

@@ -2,15 +2,16 @@ package api
 
 import (
 	"github.com/fasthttp/router"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/valyala/fasthttp"
 	"limq/authenticator"
-	"limq/channel"
+	"limq/broker"
 )
 
 type Stub struct {
-	a *authenticator.A
-	q *channel.GlobalQueue
-	r *router.Router
+	a  *authenticator.A
+	br *broker.AutoBufferedBroker
+	r  *router.Router
 }
 
 func (stub *Stub) Handler() func(ctx *fasthttp.RequestCtx) {
@@ -19,10 +20,10 @@ func (stub *Stub) Handler() func(ctx *fasthttp.RequestCtx) {
 
 var strApplicationJSON = []byte("application/json")
 
-func NewStub(a *authenticator.A) *Stub {
+func NewStub(pool *pgxpool.Pool, a *authenticator.A) *Stub {
 	s := &Stub{
-		a: a,
-		q: channel.NewGQ(a.CreateMixinManager()),
+		a:  a,
+		br: broker.NewAQ(pool, a.CreateMixinManager()),
 	}
 
 	r := router.New()
