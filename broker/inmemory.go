@@ -1,11 +1,11 @@
-package channel
+package broker
 
 import (
 	"sync/atomic"
 	"time"
 )
 
-// InMemory is a dummy Go-channel-based message queue implementation utilizing only process' memory
+// InMemory is a dummy Go-broker-based message queue implementation utilizing only process' memory
 type InMemory struct {
 	buf     chan []byte
 	waiting uint32

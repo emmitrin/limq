@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"github.com/valyala/fasthttp"
-	"limq/channel"
+	"limq/broker"
 	"net/http"
 )
 
@@ -23,14 +23,14 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	m := &channel.Message{ChannelID: auth.Tag}
+	m := &broker.Message{ChannelID: auth.Tag}
 
 	{
 		body := ctx.PostBody()
 		m.Payload = make([]byte, len(body))
 		copy(m.Payload, body)
 
-		ok := stub.q.PostImmediatelyWithMixins(auth.Tag, m)
+		ok := stub.br.PostImmediatelyWithMixins(auth.Tag, m)
 
 		if ok {
 			response := struct{ hasCode }{}

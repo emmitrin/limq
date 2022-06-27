@@ -1,8 +1,8 @@
-package channel
+package broker
 
 import "time"
 
-// Descriptor is the core interface for channel manipulation
+// Descriptor is the core interface for broker manipulation
 type Descriptor interface {
 	Send(b []byte) error
 	Read(timeout time.Duration) ([]byte, error)

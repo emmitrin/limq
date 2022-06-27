@@ -1,4 +1,4 @@
-package channel
+package broker
 
 import (
 	"context"
@@ -9,39 +9,41 @@ import (
 )
 
 const (
+	KB = 1 << 10
+
 	GlobalQueueMaxBufferPerChannel = 512
-	GlobalQueueMaxMessageSize      = 50 * 1024
+	GlobalQueueMaxMessageSize      = 256 * KB
 )
 
-// GlobalQueue works in a multicast mode and holds buffered data in the process' memory
-type GlobalQueue struct {
+// ManualBroker works in a multicast mode and holds buffered data in the process' memory
+type ManualBroker struct {
 	mu   *sync.Mutex
 	wm   map[string]stream
 	mman MixinManager
 }
 
-func NewGQ(mman MixinManager) *GlobalQueue {
-	return &GlobalQueue{
+func NewGQ(mman MixinManager) *ManualBroker {
+	return &ManualBroker{
 		mu:   &sync.Mutex{},
 		wm:   map[string]stream{},
 		mman: mman,
 	}
 }
 
-func (gq *GlobalQueue) acquire(tag string) stream {
+func (gq *ManualBroker) acquire(tag string) stream {
 	gq.mu.Lock()
 	defer gq.mu.Unlock()
 
 	s, ok := gq.wm[tag]
 	if !ok {
-		s = newStatefulMulticastStream()
+		s = newUnbufferedDirectS()
 		gq.wm[tag] = s
 	}
 
 	return s
 }
 
-func (gq *GlobalQueue) PostWithTimeout(m *Message, to time.Duration) (ok bool) {
+func (gq *ManualBroker) PostWithTimeout(m *Message, to time.Duration) (ok bool) {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return false
 	}
@@ -69,7 +71,7 @@ func (gq *GlobalQueue) PostWithTimeout(m *Message, to time.Duration) (ok bool) {
 	return true
 }
 
-func (gq *GlobalQueue) PostImmediately(m *Message) (ok bool) {
+func (gq *ManualBroker) PostImmediately(m *Message) (ok bool) {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return false
 	}
@@ -85,7 +87,7 @@ func (gq *GlobalQueue) PostImmediately(m *Message) (ok bool) {
 	for i := uint32(0); i < online; i++ {
 		select {
 		default:
-			// channel is already fed, reject
+			// broker is already fed, reject
 			// todo check situations when only half of the online listeners received the msg
 			return false
 
@@ -96,7 +98,7 @@ func (gq *GlobalQueue) PostImmediately(m *Message) (ok bool) {
 	return true
 }
 
-func (gq *GlobalQueue) Listen(ctx context.Context, tag string) (m *Message) {
+func (gq *ManualBroker) Listen(ctx context.Context, tag string) (m *Message) {
 	streamHandler := gq.acquire(tag)
 
 	// todo make peer identification to solve the re-post issue
@@ -114,7 +116,7 @@ func (gq *GlobalQueue) Listen(ctx context.Context, tag string) (m *Message) {
 	}
 }
 
-func (gq *GlobalQueue) QueueSize(tag string) int {
+func (gq *ManualBroker) QueueSize(tag string) int {
 	gq.mu.Lock()
 	defer gq.mu.Unlock()
 
@@ -126,9 +128,9 @@ func (gq *GlobalQueue) QueueSize(tag string) int {
 	return len(s.ch())
 }
 
-func (gq *GlobalQueue) repost(visited *set.Set[string], tag string, m Message, postToThis bool) {
+func (gq *ManualBroker) repost(visited *set.Set[string], tag string, m Message, postToThis bool) {
 	if visited.Has(tag) {
-		zap.L().Warn("repost for mixed-in channel: circular dependency detected", zap.String("chan_id", tag))
+		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
 	}
 
@@ -138,7 +140,7 @@ func (gq *GlobalQueue) repost(visited *set.Set[string], tag string, m Message, p
 		ok := gq.PostImmediately(&m)
 
 		if !ok {
-			zap.L().Warn("unable to post to mixed-in channel", zap.String("chan_id", tag))
+			zap.L().Warn("unable to post to mixed-in broker", zap.String("chan_id", tag))
 		}
 	}
 
@@ -150,7 +152,7 @@ func (gq *GlobalQueue) repost(visited *set.Set[string], tag string, m Message, p
 	}
 }
 
-func (gq *GlobalQueue) PostImmediatelyWithMixins(tag string, m *Message) (ok bool) {
+func (gq *ManualBroker) PostImmediatelyWithMixins(tag string, m *Message) (ok bool) {
 	ok = gq.PostImmediately(m)
 
 	go gq.repost(set.NewSet[string](nil), tag, *m, false)

@@ -40,7 +40,7 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 	defer cancel()
 
 	{
-		m := stub.q.Listen(listenCtx, auth.Tag)
+		m := stub.br.Listen(listenCtx, auth.Tag)
 		if m == nil {
 			ctx.SetStatusCode(http.StatusNotModified)
 			return
