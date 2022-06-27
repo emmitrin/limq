@@ -1,14 +1,14 @@
 package main
 
 import (
-	"limq/channel"
+	"limq/broker"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestInMemory(t *testing.T) {
-	var d channel.Descriptor = channel.NewInMemory()
+	var d broker.Descriptor = broker.NewInMemory()
 
 	readersCount := int32(1000)
 	readOccurs := int32(0)

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"github.com/go-redis/redis/v8"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/valyala/fasthttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -10,10 +12,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
-
 	{
 		var config zap.Config
 
@@ -35,8 +37,13 @@ func main() {
 		DB:       envIntOrDefault("REDIS_DB", 3),
 	})
 
+	pool, err := acquirePg()
+	if err != nil {
+		zap.L().Fatal("unable to set up postgresql", zap.Error(err))
+	}
+
 	authManager := authenticator.NewA(rdb)
-	stubManager := api.NewStub(authManager)
+	stubManager := api.NewStub(pool, authManager)
 
 	server := &fasthttp.Server{}
 	server.Handler = stubManager.Handler()
@@ -56,4 +63,11 @@ func main() {
 	}
 
 	zap.L().Info("server is terminated")
+}
+
+func acquirePg() (*pgxpool.Pool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return pgxpool.Connect(ctx, os.Getenv("DATABASE_URL"))
 }
