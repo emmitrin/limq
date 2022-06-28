@@ -5,6 +5,7 @@ import (
 	"github.com/fasthttp/websocket"
 	"github.com/valyala/fasthttp"
 	"go.uber.org/zap"
+	"limq/message"
 	"net/http"
 )
 
@@ -13,7 +14,7 @@ var upgrader = websocket.FastHTTPUpgrader{} // use default options
 func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
-	auth := stub.a.CheckAccessKey(key)
+	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
 		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		ctx.SetContentTypeBytes(strApplicationJSON)
@@ -26,10 +27,16 @@ func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if !stub.ea.start(key) {
+		ctx.Error(fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusConflict)
+		return
+	}
+
 	err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 		listenerContext, cancel := context.WithCancel(context.Background())
 
 		go func() {
+			defer stub.ea.stop(key)
 			defer cancel()
 
 			for {
@@ -46,8 +53,9 @@ func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 			}
 		}()
 
-		for {
-			m := stub.br.Listen(listenerContext, auth.Tag)
+		channel := stub.bufferedBroker.ListenStream(listenerContext, auth.Tag)
+
+		for m := range channel {
 			if m == nil {
 				if listenerContext.Err() == nil {
 					zap.L().Warn("invalid nil message", zap.String("tag", auth.Tag))
@@ -56,7 +64,7 @@ func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 				break
 			}
 
-			err := conn.WriteMessage(websocket.BinaryMessage, m.Payload)
+			err := conn.WriteMessage(message.TypeToWebSocketType(m.Type), m.Payload)
 			if err != nil {
 				zap.L().Warn("unable to write message", zap.String("tag", auth.Tag))
 				break
