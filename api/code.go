@@ -6,6 +6,8 @@ const (
 	CodeUnknownError
 	CodeChannelIsFull
 	CodeTimeout
+	CodeAnotherClientIsOnline
+	CodeUnknownMessageType
 )
 
 type hasCode struct {
