@@ -1,13 +1,16 @@
 package broker
 
-import "sync/atomic"
+import (
+	"limq/message"
+	"sync/atomic"
+)
 
 type unbufferedDirectStream struct {
 	_online uint32
-	c       chan *Message
+	c       chan *message.Message
 }
 
-func (s *unbufferedDirectStream) publish(m *Message) {
+func (s *unbufferedDirectStream) publish(m *message.Message) {
 	online := s.online()
 	if online == 0 {
 		panic("unbuffered stream publish on zero subscribers")
@@ -49,9 +52,9 @@ L:
 }
 
 func newUnbufferedDirectS() stream {
-	return &unbufferedDirectStream{c: make(chan *Message, GlobalQueueMaxBufferPerChannel)}
+	return &unbufferedDirectStream{c: make(chan *message.Message, GlobalQueueMaxBufferPerChannel)}
 }
 
-func (s *unbufferedDirectStream) ch() chan *Message {
+func (s *unbufferedDirectStream) ch() chan *message.Message {
 	return s.c
 }

@@ -9,29 +9,32 @@ import (
 )
 
 type Stub struct {
-	a  *authenticator.A
-	br *broker.AutoBufferedBroker
-	r  *router.Router
+	auth           *authenticator.A
+	bufferedBroker *broker.AutoBufferedBroker
+	routes         *router.Router
+	ea             *exclusiveAccess
 }
 
 func (stub *Stub) Handler() func(ctx *fasthttp.RequestCtx) {
-	return stub.r.Handler
+	return stub.routes.Handler
 }
 
 var strApplicationJSON = []byte("application/json")
 
 func NewStub(pool *pgxpool.Pool, a *authenticator.A) *Stub {
 	s := &Stub{
-		a:  a,
-		br: broker.NewAQ(pool, a.CreateMixinManager()),
+		auth:           a,
+		bufferedBroker: broker.NewAQ(pool, a.CreateMixinManager()),
 	}
 
 	r := router.New()
-	s.r = r
+	s.routes = r
 
 	r.GET("/listen{access_key}", s.listen)
 	r.POST("/post{access_key}", s.post)
 	r.GET("/ws_listen{access_key}", s.listenWS)
+
+	s.ea = newEA()
 
 	return s
 }
