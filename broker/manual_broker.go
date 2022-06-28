@@ -4,6 +4,7 @@ import (
 	"context"
 	"go.uber.org/zap"
 	"limq/internal/set"
+	"limq/message"
 	"sync"
 	"time"
 )
@@ -43,7 +44,7 @@ func (gq *ManualBroker) acquire(tag string) stream {
 	return s
 }
 
-func (gq *ManualBroker) PostWithTimeout(m *Message, to time.Duration) (ok bool) {
+func (gq *ManualBroker) PostWithTimeout(m *message.Message, to time.Duration) (ok bool) {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return false
 	}
@@ -71,7 +72,7 @@ func (gq *ManualBroker) PostWithTimeout(m *Message, to time.Duration) (ok bool) 
 	return true
 }
 
-func (gq *ManualBroker) PostImmediately(m *Message) (ok bool) {
+func (gq *ManualBroker) PostImmediately(m *message.Message) (ok bool) {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return false
 	}
@@ -98,7 +99,7 @@ func (gq *ManualBroker) PostImmediately(m *Message) (ok bool) {
 	return true
 }
 
-func (gq *ManualBroker) Listen(ctx context.Context, tag string) (m *Message) {
+func (gq *ManualBroker) Listen(ctx context.Context, tag string) (m *message.Message) {
 	streamHandler := gq.acquire(tag)
 
 	// todo make peer identification to solve the re-post issue
@@ -128,7 +129,7 @@ func (gq *ManualBroker) QueueSize(tag string) int {
 	return len(s.ch())
 }
 
-func (gq *ManualBroker) repost(visited *set.Set[string], tag string, m Message, postToThis bool) {
+func (gq *ManualBroker) repost(visited *set.Set[string], tag string, m message.Message, postToThis bool) {
 	if visited.Has(tag) {
 		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
@@ -152,7 +153,7 @@ func (gq *ManualBroker) repost(visited *set.Set[string], tag string, m Message, 
 	}
 }
 
-func (gq *ManualBroker) PostImmediatelyWithMixins(tag string, m *Message) (ok bool) {
+func (gq *ManualBroker) PostImmediatelyWithMixins(tag string, m *message.Message) (ok bool) {
 	ok = gq.PostImmediately(m)
 
 	go gq.repost(set.NewSet[string](nil), tag, *m, false)
