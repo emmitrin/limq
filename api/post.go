@@ -3,16 +3,16 @@ package api
 import (
 	"encoding/json"
 	"github.com/valyala/fasthttp"
-	"limq/broker"
+	"limq/message"
 	"net/http"
 )
 
 func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
-	ctx.SetContentTypeBytes(strApplicationJSON)
+	defer ctx.SetContentTypeBytes(strApplicationJSON)
 
-	auth := stub.a.CheckAccessKey(key)
+	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
 		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		return
@@ -23,16 +23,23 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	m := &broker.Message{ChannelID: auth.Tag}
+	messageTypeRaw := ctx.Request.Header.Peek("x-message-type")
+	typ, ok := message.ParseType(string(messageTypeRaw))
+	if !ok {
+		ctx.Error(fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
+		return
+	}
+
+	m := &message.Message{ChannelID: auth.Tag, Type: typ}
 
 	{
 		body := ctx.PostBody()
 		m.Payload = make([]byte, len(body))
 		copy(m.Payload, body)
 
-		ok := stub.br.PostImmediatelyWithMixins(auth.Tag, m)
+		err := stub.bufferedBroker.PublishImmediatelyWithMixedIn(auth.Tag, m)
 
-		if ok {
+		if err == nil {
 			response := struct{ hasCode }{}
 			json.NewEncoder(ctx).Encode(response)
 		} else {

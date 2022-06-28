@@ -15,7 +15,7 @@ const defaultTimeout = 40
 func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
-	auth := stub.a.CheckAccessKey(key)
+	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
 		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		ctx.SetContentTypeBytes(strApplicationJSON)
@@ -27,6 +27,13 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
+
+	if !stub.ea.start(key) {
+		ctx.Error(fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusForbidden)
+		return
+	}
+
+	defer stub.ea.stop(key)
 
 	timeoutValue := ctx.Request.Header.Peek("X-Timeout")
 
@@ -40,7 +47,7 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 	defer cancel()
 
 	{
-		m := stub.br.Listen(listenCtx, auth.Tag)
+		m := stub.bufferedBroker.Listen(listenCtx, auth.Tag)
 		if m == nil {
 			ctx.SetStatusCode(http.StatusNotModified)
 			return
