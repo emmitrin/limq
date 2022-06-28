@@ -7,12 +7,17 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"go.uber.org/zap"
 	"limq/internal/set"
+	"limq/message"
 	"sync"
 	"time"
 )
 
 var (
 	ErrNoBufferedMessages = errors.New("no buffered messages")
+)
+
+const (
+	directStreamingBuffer = 128
 )
 
 // AutoBufferedBroker works in a multicast mode (all receivers can receive the same message).
@@ -47,7 +52,7 @@ func (aq *AutoBufferedBroker) acquire(tag string) stream {
 	return s
 }
 
-func (aq *AutoBufferedBroker) storeToBufferPersist(m *Message) error {
+func (aq *AutoBufferedBroker) storeToBufferPersist(m *message.Message) error {
 	to, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
@@ -75,13 +80,10 @@ func (aq *AutoBufferedBroker) storeToBufferPersist(m *Message) error {
 	return nil
 }
 
-func (aq *AutoBufferedBroker) PublishImmediately(m *Message) error {
+func (aq *AutoBufferedBroker) PublishImmediately(m *message.Message) error {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return errors.New("message is too big")
 	}
-
-	aq.mu.Lock()
-	defer aq.mu.Unlock()
 
 	streamHandler := aq.acquire(m.ChannelID)
 
@@ -96,10 +98,10 @@ func (aq *AutoBufferedBroker) PublishImmediately(m *Message) error {
 	return nil
 }
 
-func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *Message, err error) {
+func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *message.Message, err error) {
 	conn, err := aq.pool.Acquire(ctx)
 	if err != nil {
-		zap.L().Error("unable to acquire db conn", zap.Error(err), zap.String("tag", m.ChannelID))
+		zap.L().Error("unable to acquire db conn", zap.Error(err), zap.String("tag", tag))
 		return nil, err
 	}
 
@@ -110,10 +112,11 @@ func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *
 		`DELETE FROM messages
 			WHERE id = (
 				SELECT id FROM messages WHERE tag = $1 ORDER BY ID ASC LIMIT 1
-			) RETURNING msg_type, data`,
+			) RETURNING msg_type, content`,
+		tag,
 	)
 
-	nm := &Message{}
+	nm := &message.Message{}
 
 	err = row.Scan(&nm.Type, &nm.Payload)
 	if err != nil {
@@ -121,14 +124,14 @@ func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *
 			return nil, ErrNoBufferedMessages
 		}
 
-		zap.L().Error("pgx error", zap.Error(err), zap.String("tag", m.ChannelID))
+		zap.L().Error("pgx error", zap.Error(err), zap.String("tag", tag))
 		return nil, err
 	}
 
 	return nm, nil
 }
 
-func (aq *AutoBufferedBroker) Listen(ctx context.Context, tag string) (m *Message) {
+func (aq *AutoBufferedBroker) Listen(ctx context.Context, tag string) (m *message.Message) {
 	// dispatch buffered messages
 	m, err := aq.readBuffered(ctx, tag)
 	if err != nil && !errors.Is(err, ErrNoBufferedMessages) {
@@ -155,7 +158,60 @@ func (aq *AutoBufferedBroker) Listen(ctx context.Context, tag string) (m *Messag
 	}
 }
 
-func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m Message, publishCurrent bool) {
+func (aq *AutoBufferedBroker) streamDispatch(ctx context.Context, tag string, target chan *message.Message) {
+	streamHandler := aq.acquire(tag)
+
+	queue := streamHandler.ch()
+
+	// todo make this smarter
+	direct := make(chan *message.Message, directStreamingBuffer)
+
+	go func() {
+		streamHandler.subscribe()
+		defer streamHandler.unsubscribe()
+
+		for {
+			select {
+			case <-ctx.Done():
+				close(direct)
+				return
+
+			case val := <-queue:
+				direct <- val
+			}
+		}
+	}()
+
+	for {
+		bufferedMessage, err := aq.readBuffered(ctx, tag)
+		if errors.Is(err, ErrNoBufferedMessages) {
+			break
+		}
+
+		if err != nil {
+			zap.L().Error("listen streaming mode: dispatch buffered error", zap.String("tag", tag), zap.Error(err))
+			break
+		}
+
+		target <- bufferedMessage
+	}
+
+	for m := range direct {
+		target <- m
+	}
+
+	close(target)
+}
+
+func (aq *AutoBufferedBroker) ListenStream(ctx context.Context, tag string) chan *message.Message {
+	c := make(chan *message.Message, 10)
+
+	go aq.streamDispatch(ctx, tag, c)
+
+	return c
+}
+
+func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m message.Message, publishCurrent bool) {
 	if visited.Has(tag) {
 		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
@@ -179,7 +235,7 @@ func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m Mes
 	}
 }
 
-func (aq *AutoBufferedBroker) PublishImmediatelyWithMixedIn(tag string, m *Message) error {
+func (aq *AutoBufferedBroker) PublishImmediatelyWithMixedIn(tag string, m *message.Message) error {
 	err := aq.PublishImmediately(m)
 	if err != nil {
 		return err
