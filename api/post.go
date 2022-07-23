@@ -14,19 +14,19 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
-		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
+		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		return
 	}
 
 	if !auth.Flags.CanPost() {
-		ctx.Error(fastError(CodeAuthenticationError, "no post permissions"), http.StatusForbidden)
+		sendError(ctx, fastError(CodeAuthenticationError, "no post permissions"), http.StatusForbidden)
 		return
 	}
 
 	messageTypeRaw := ctx.Request.Header.Peek("x-message-type")
 	typ, ok := message.ParseType(string(messageTypeRaw))
 	if !ok {
-		ctx.Error(fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
+		sendError(ctx, fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
 		return
 	}
 

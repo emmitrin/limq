@@ -17,19 +17,19 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
-		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
+		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
 	if !auth.Flags.CanListen() {
-		ctx.Error(fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
+		sendError(ctx, fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
 		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
 	if !stub.ea.start(key) {
-		ctx.Error(fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusForbidden)
+		sendError(ctx, fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusForbidden)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 
 		_, err := io.Copy(ctx, bytes.NewReader(m.Payload))
 		if err != nil {
-			ctx.Error(fastError(CodeUnknownError, "can't drop buffer"), http.StatusInternalServerError)
+			sendError(ctx, fastError(CodeUnknownError, "can't drop buffer"), http.StatusInternalServerError)
 			ctx.SetContentTypeBytes(strApplicationJSON)
 			return
 		}

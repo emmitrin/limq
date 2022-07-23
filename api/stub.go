@@ -30,9 +30,18 @@ func NewStub(pool *pgxpool.Pool, a *authenticator.A) *Stub {
 	r := router.New()
 	s.routes = r
 
-	r.GET("/listen{access_key}", s.listen)
-	r.POST("/post{access_key}", s.post)
-	r.GET("/ws_listen{access_key}", s.listenWS)
+	r.GET("/listen{access_key}", CorsMiddlewareAny(s.listen))
+	r.POST("/post{access_key}", CorsMiddlewareAny(s.post))
+	r.GET("/ws_listen{access_key}", CorsMiddlewareAny(s.listenWS))
+
+	r.HandleOPTIONS = true
+	r.GlobalOPTIONS = CorsMiddlewareAny(func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("Allow", "OPTIONS, GET, POST")
+	})
+
+	r.NotFound = CorsMiddlewareAny(func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("Allow", "OPTIONS, GET, POST")
+	})
 
 	s.ea = newEA()
 

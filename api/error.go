@@ -1,6 +1,9 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"github.com/valyala/fasthttp"
+)
 
 type statusCodeWithText struct {
 	hasCode
@@ -15,4 +18,9 @@ func fastError(statusCode int, reason string) string {
 	val, _ := json.Marshal(m)
 
 	return string(val)
+}
+
+func sendError(ctx *fasthttp.RequestCtx, msg string, statusCode int) {
+	ctx.SetStatusCode(statusCode)
+	ctx.SetBodyString(msg)
 }

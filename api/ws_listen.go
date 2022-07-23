@@ -9,34 +9,39 @@ import (
 	"net/http"
 )
 
-var upgrader = websocket.FastHTTPUpgrader{} // use default options
+var upgrader = websocket.FastHTTPUpgrader{
+	CheckOrigin: func(ctx *fasthttp.RequestCtx) bool {
+		return true // possibly unsafe
+	},
+}
 
 func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
-		ctx.Error(fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
+		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
 		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
 	if !auth.Flags.CanListen() {
-		ctx.Error(fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
+		sendError(ctx, fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
 		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
 	if !stub.ea.start(key) {
-		ctx.Error(fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusConflict)
+		sendError(ctx, fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusConflict)
 		return
 	}
+
+	defer stub.ea.stop(key)
 
 	err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 		listenerContext, cancel := context.WithCancel(context.Background())
 
 		go func() {
-			defer stub.ea.stop(key)
 			defer cancel()
 
 			for {
