@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"limq/broker"
 	"limq/common"
+	"strings"
 	"time"
 )
 
@@ -14,13 +15,22 @@ func (a *A) GetForwardDestinations(d Descriptor) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	cmd := a.c.LRange(ctx, common.ForwardToDescriptor+d.Tag, 0, -1)
-	values, err := cmd.Result()
+	cmd := a.c.Get(ctx, common.ForwardToDescriptor+d.Tag)
+	list, err := cmd.Result()
 
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
 			zap.L().Warn("redis error obtaining forward_to", zap.String("chan_id", d.Tag), zap.Error(err))
 			return nil
+		}
+	}
+
+	storedValues := strings.Split(list, ",")
+	values := make([]string, 0, len(storedValues))
+
+	for _, v := range storedValues {
+		if len(v) == 16 {
+			values = append(values, v)
 		}
 	}
 
