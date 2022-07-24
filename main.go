@@ -21,11 +21,11 @@ func main() {
 
 		if len(os.Getenv("DEBUG")) > 0 {
 			config = zap.NewDevelopmentConfig()
+			config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		} else {
 			config = zap.NewProductionConfig()
 		}
 
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		logger, _ := config.Build()
 		zap.ReplaceGlobals(logger)
 		defer logger.Sync()
@@ -57,8 +57,11 @@ func main() {
 		zap.L()
 	}()
 
-	zap.L().Info("starting the server on :8080")
-	if err := server.ListenAndServe(":8080"); err != nil {
+	address := envOrDefault("ADDRESS", ":8081")
+
+	zap.L().Info("starting the server", zap.String("address", address))
+
+	if err := server.ListenAndServe(address); err != nil {
 		zap.L().Error("error on startup: " + err.Error())
 	}
 
