@@ -21,13 +21,11 @@ func (stub *Stub) listenWS(ctx *fasthttp.RequestCtx) {
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
 		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
-		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
 	if !auth.Flags.CanListen() {
 		sendError(ctx, fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
-		ctx.SetContentTypeBytes(strApplicationJSON)
 		return
 	}
 
