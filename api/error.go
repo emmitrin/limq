@@ -22,5 +22,6 @@ func fastError(statusCode int, reason string) string {
 
 func sendError(ctx *fasthttp.RequestCtx, msg string, statusCode int) {
 	ctx.SetStatusCode(statusCode)
+	ctx.SetContentTypeBytes(strApplicationJSON)
 	ctx.SetBodyString(msg)
 }
