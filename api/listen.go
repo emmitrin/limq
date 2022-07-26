@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const defaultTimeout = 40
+const defaultTimeout = 25
 
 func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
