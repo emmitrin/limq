@@ -80,7 +80,7 @@ func (aq *AutoBufferedBroker) storeToBufferPersist(m *message.Message) error {
 	return nil
 }
 
-func (aq *AutoBufferedBroker) PublishImmediately(m *message.Message) error {
+func (aq *AutoBufferedBroker) Post(m *message.Message) error {
 	if len(m.Payload) > GlobalQueueMaxMessageSize {
 		return errors.New("message is too big")
 	}
@@ -89,11 +89,16 @@ func (aq *AutoBufferedBroker) PublishImmediately(m *message.Message) error {
 
 	online := streamHandler.online()
 	if online == 0 {
-		aq.storeToBufferPersist(m)
-		return nil
+		return aq.storeToBufferPersist(m)
 	}
 
-	streamHandler.publish(m)
+	switch m.Scope {
+	case message.ScopeNotifyAll:
+		streamHandler.post(m)
+
+	case message.ScopeNotifyOne:
+		streamHandler.postOne(m)
+	}
 
 	return nil
 }
@@ -220,7 +225,7 @@ func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m mes
 	m.ChannelID = tag
 
 	if publishCurrent {
-		err := aq.PublishImmediately(&m)
+		err := aq.Post(&m)
 
 		if err != nil {
 			zap.L().Warn("unable to post to mixed-in broker", zap.String("chan_id", tag), zap.Error(err))
@@ -235,10 +240,14 @@ func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m mes
 	}
 }
 
-func (aq *AutoBufferedBroker) PublishImmediatelyWithMixedIn(tag string, m *message.Message) error {
-	err := aq.PublishImmediately(m)
+func (aq *AutoBufferedBroker) PostWithMixin(tag string, m *message.Message) error {
+	err := aq.Post(m)
 	if err != nil {
 		return err
+	}
+
+	if m.Scope != message.ScopeNotifyAll {
+		return nil
 	}
 
 	go aq.repost(set.NewSet[string](nil), tag, *m, false)

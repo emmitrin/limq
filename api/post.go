@@ -23,21 +23,32 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	messageTypeRaw := ctx.Request.Header.Peek("x-message-type")
-	typ, ok := message.ParseType(string(messageTypeRaw))
-	if !ok {
-		sendError(ctx, fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
-		return
+	var typ, scope int
+
+	{
+		ok := false
+
+		messageTypeRaw := ctx.Request.Header.Peek("x-message-type")
+		typ, ok = message.ParseType(string(messageTypeRaw))
+		if !ok {
+			sendError(ctx, fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
+			return
+		}
 	}
 
-	m := &message.Message{ChannelID: auth.Tag, Type: typ}
+	{
+		scopeRaw := string(ctx.Request.Header.Peek("x-scope"))
+		scope = message.ParseScope(scopeRaw)
+	}
+
+	m := &message.Message{ChannelID: auth.Tag, Type: typ, Scope: scope}
 
 	{
 		body := ctx.PostBody()
 		m.Payload = make([]byte, len(body))
 		copy(m.Payload, body)
 
-		err := stub.bufferedBroker.PublishImmediatelyWithMixedIn(auth.Tag, m)
+		err := stub.bufferedBroker.PostWithMixin(auth.Tag, m)
 
 		if err == nil {
 			response := struct{ hasCode }{}
