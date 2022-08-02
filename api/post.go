@@ -1,8 +1,10 @@
 package api
 
 import (
-	"encoding/json"
+	"errors"
 	"github.com/valyala/fasthttp"
+	"go.uber.org/zap"
+	"limq/broker"
 	"limq/message"
 	"net/http"
 )
@@ -14,12 +16,16 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
-		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
+		setError(ctx, http.StatusUnauthorized)
+		writeError(ctx, CodeAuthenticationError, "access key is suspended or invalid")
+
 		return
 	}
 
 	if !auth.Flags.CanPost() {
-		sendError(ctx, fastError(CodeAuthenticationError, "no post permissions"), http.StatusForbidden)
+		setError(ctx, http.StatusForbidden)
+		writeError(ctx, CodeAuthenticationError, "no post permissions")
+
 		return
 	}
 
@@ -31,7 +37,9 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		messageTypeRaw := ctx.Request.Header.Peek("x-message-type")
 		typ, ok = message.ParseType(string(messageTypeRaw))
 		if !ok {
-			sendError(ctx, fastError(CodeUnknownMessageType, "unknown message type"), http.StatusBadRequest)
+			setError(ctx, http.StatusBadRequest)
+			writeError(ctx, CodeUnknownMessageType, "unknown message type")
+
 			return
 		}
 	}
@@ -52,12 +60,28 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 
 		if err == nil {
 			response := struct{ hasCode }{}
-			json.NewEncoder(ctx).Encode(response)
+			writeJSON(ctx, response)
+
 		} else {
 			response := statusCodeWithText{}
-			response.Code = CodeChannelIsFull
-			response.Message = "Channel is already full. Enable a message listener to offload messages"
-			json.NewEncoder(ctx).Encode(response)
+
+			if errors.Is(err, broker.ErrMessageIsEmpty) {
+				response.Code = CodeMessageIsEmpty
+				response.StatusText = "Message body is empty"
+
+			} else if errors.Is(err, broker.ErrMessageIsTooLarge) {
+				response.Code = CodeMessageIsTooBig
+				response.StatusText = "Message is too large"
+
+			} else {
+				response.Code = CodeUnknownError
+				response.StatusText = "Unable to post the message due to server error"
+
+			}
+
+			writeJSON(ctx, response)
+
+			zap.L().Error("unable to post the message", zap.Error(err))
 		}
 	}
 }
