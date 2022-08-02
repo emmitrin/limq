@@ -6,3 +6,7 @@ import "github.com/jackc/pgx/v4/pgxpool"
 type Keeper struct {
 	pool *pgxpool.Pool
 }
+
+func NewKeeper(pool *pgxpool.Pool) *Keeper {
+	return &Keeper{pool: pool}
+}
