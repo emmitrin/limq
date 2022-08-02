@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/valyala/fasthttp"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
@@ -17,17 +18,23 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 
 	auth := stub.auth.CheckAccessKey(key)
 	if !auth.Flags.Active() || len(auth.Tag) == 0 {
-		sendError(ctx, fastError(CodeAuthenticationError, "access key is suspended or invalid"), http.StatusUnauthorized)
+		setError(ctx, http.StatusUnauthorized)
+		writeError(ctx, CodeAuthenticationError, "access key is suspended or invalid")
+
 		return
 	}
 
 	if !auth.Flags.CanListen() {
-		sendError(ctx, fastError(CodeAuthenticationError, "no listen permissions"), http.StatusForbidden)
+		setError(ctx, http.StatusForbidden)
+		writeError(ctx, CodeAuthenticationError, "no listen permissions")
+
 		return
 	}
 
 	if !stub.ea.start(key) {
-		sendError(ctx, fastError(CodeAnotherClientIsOnline, "this access key is being used by another listener right now"), http.StatusForbidden)
+		setError(ctx, http.StatusConflict)
+		writeError(ctx, CodeAnotherClientIsOnline, "this access key is being used by another listener right now")
+
 		return
 	}
 
@@ -55,7 +62,7 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 
 		_, err := io.Copy(ctx, bytes.NewReader(m.Payload))
 		if err != nil {
-			sendError(ctx, fastError(CodeUnknownError, "can't drop buffer"), http.StatusInternalServerError)
+			zap.L().Error("can't drop buffer", zap.String("chan_id", m.ChannelID), zap.Error(err))
 			return
 		}
 	}
