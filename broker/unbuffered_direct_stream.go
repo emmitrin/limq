@@ -2,6 +2,7 @@ package broker
 
 import (
 	"limq/message"
+	"limq/quota"
 	"sync/atomic"
 )
 
@@ -59,7 +60,7 @@ L:
 }
 
 func newUnbufferedDirectS() stream {
-	return &unbufferedDirectStream{c: make(chan *message.Message, GlobalQueueMaxBufferPerChannel)}
+	return &unbufferedDirectStream{c: make(chan *message.Message, quota.MaxBufferedMessages)}
 }
 
 func (s *unbufferedDirectStream) ch() chan *message.Message {
