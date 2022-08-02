@@ -1,69 +1,156 @@
 package broker
 
 import (
-	"sync/atomic"
+	"context"
+	"go.uber.org/zap"
+	"limq/internal/set"
+	"limq/message"
+	"limq/quota"
+	"sync"
 	"time"
 )
 
-// InMemory is a dummy Go-broker-based message queue implementation utilizing only process' memory
+// InMemory works in a multicast mode and holds buffered data in the process' memory
 type InMemory struct {
-	buf     chan []byte
-	waiting uint32
+	mu   *sync.Mutex
+	wm   map[string]stream
+	mman MixinManager
 }
 
-const inMemoryBufSize = 128
-
-func (i *InMemory) BufferSize() int {
-	return cap(i.buf)
+func NewGQ(mman MixinManager) *InMemory {
+	return &InMemory{
+		mu:   &sync.Mutex{},
+		wm:   map[string]stream{},
+		mman: mman,
+	}
 }
 
-func (i *InMemory) Send(b []byte) error {
-	for x := uint32(0); x < atomic.LoadUint32(&i.waiting); x++ {
+func (gq *InMemory) acquire(tag string) stream {
+	gq.mu.Lock()
+	defer gq.mu.Unlock()
+
+	s, ok := gq.wm[tag]
+	if !ok {
+		s = newUnbufferedDirectS()
+		gq.wm[tag] = s
+	}
+
+	return s
+}
+
+func (gq *InMemory) PostWithTimeout(m *message.Message, to time.Duration) (ok bool) {
+	if len(m.Payload) > quota.MaxMessageSize {
+		return false
+	}
+
+	t := time.NewTimer(to)
+
+	streamHandler := gq.acquire(m.ChannelID)
+
+	queue := streamHandler.ch()
+	online := streamHandler.online()
+	if online == 0 {
+		online = 1
+	}
+
+	for i := uint32(0); i < online; i++ {
 		select {
-		case i.buf <- b:
-		default:
+		case <-t.C:
+			return false // todo check situations when only half of the online listeners received the msg
+
+		case queue <- m:
 		}
 	}
 
-	return nil
-}
-
-func (i *InMemory) Read(timeout time.Duration) ([]byte, error) {
-	var t *time.Timer
-
-	if timeout == -1 {
-		t = &time.Timer{C: make(chan time.Time)}
-	} else {
-		t = time.NewTimer(timeout)
-	}
-
-	atomic.AddUint32(&i.waiting, 1)
-
-	select {
-	case <-t.C:
-		return nil, ErrTimeout
-
-	case data := <-i.buf:
-		if timeout != -1 && !t.Stop() {
-			<-t.C
-		}
-
-		return data, nil
-	}
-}
-
-func (i *InMemory) Buffered() bool {
+	t.Stop()
 	return true
 }
 
-func (i *InMemory) Count() int {
-	return len(i.buf)
+func (gq *InMemory) PostImmediately(m *message.Message) (ok bool) {
+	if len(m.Payload) > quota.MaxMessageSize {
+		return false
+	}
+
+	streamHandler := gq.acquire(m.ChannelID)
+
+	queue := streamHandler.ch()
+	online := streamHandler.online()
+	if online == 0 {
+		online = 1
+	}
+
+	for i := uint32(0); i < online; i++ {
+		select {
+		default:
+			// broker is already fed, reject
+			// todo check situations when only half of the online listeners received the msg
+			return false
+
+		case queue <- m:
+		}
+	}
+
+	return true
 }
 
-func (i *InMemory) Clear() {
-	i.buf = make(chan []byte, inMemoryBufSize)
+func (gq *InMemory) Listen(ctx context.Context, tag string) (m *message.Message) {
+	streamHandler := gq.acquire(tag)
+
+	// todo make peer identification to solve the re-post issue
+	streamHandler.subscribe()
+	defer streamHandler.unsubscribe()
+
+	queue := streamHandler.ch()
+
+	select {
+	case <-ctx.Done():
+		return nil
+
+	case val := <-queue:
+		return val
+	}
 }
 
-func NewInMemory() *InMemory {
-	return &InMemory{buf: make(chan []byte, inMemoryBufSize)}
+func (gq *InMemory) QueueSize(tag string) int {
+	gq.mu.Lock()
+	defer gq.mu.Unlock()
+
+	s, ok := gq.wm[tag]
+	if !ok {
+		return 0
+	}
+
+	return len(s.ch())
+}
+
+func (gq *InMemory) repost(visited *set.Set[string], tag string, m message.Message, postToThis bool) {
+	if visited.Has(tag) {
+		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
+		return
+	}
+
+	m.ChannelID = tag
+
+	if postToThis {
+		ok := gq.PostImmediately(&m)
+
+		if !ok {
+			zap.L().Warn("unable to post to mixed-in broker", zap.String("chan_id", tag))
+		}
+	}
+
+	visited.Add(tag)
+	tags := gq.mman.GetForwards(tag)
+
+	for _, t := range tags {
+		gq.repost(visited, t, m, true)
+	}
+}
+
+func (gq *InMemory) PostImmediatelyWithMixins(tag string, m *message.Message) (ok bool) {
+	ok = gq.PostImmediately(m)
+
+	go gq.repost(set.NewSet[string](), tag, *m, false)
+
+	return
 }
