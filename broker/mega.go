@@ -8,38 +8,44 @@ import (
 	"go.uber.org/zap"
 	"limq/internal/set"
 	"limq/message"
+	"limq/quota"
+	"limq/storage"
 	"sync"
-	"time"
 )
 
 var (
 	ErrNoBufferedMessages = errors.New("no buffered messages")
+	ErrMessageIsTooLarge  = errors.New("message is too large")
+	ErrMessageIsEmpty     = errors.New("message is empty")
 )
 
 const (
 	directStreamingBuffer = 128
 )
 
-// AutoBufferedBroker works in a multicast mode (all receivers can receive the same message).
+// Mega works in a multicast mode (all receivers can receive the same message).
 // If a message is posted onto the broker which has zero subscribers at the time,
 // it will be buffered in DBMS
-type AutoBufferedBroker struct {
+type Mega struct {
 	pool   *pgxpool.Pool
 	direct map[string]stream
 	mman   MixinManager
 	mu     *sync.Mutex
+
+	keeper *storage.Keeper
 }
 
-func NewAQ(pool *pgxpool.Pool, mman MixinManager) *AutoBufferedBroker {
-	return &AutoBufferedBroker{
+func NewMega(pool *pgxpool.Pool, mman MixinManager) *Mega {
+	return &Mega{
 		mu:     &sync.Mutex{},
 		direct: map[string]stream{},
 		mman:   mman,
 		pool:   pool,
+		keeper: storage.NewKeeper(pool),
 	}
 }
 
-func (aq *AutoBufferedBroker) acquire(tag string) stream {
+func (aq *Mega) acquire(tag string) stream {
 	aq.mu.Lock()
 	defer aq.mu.Unlock()
 
@@ -52,44 +58,20 @@ func (aq *AutoBufferedBroker) acquire(tag string) stream {
 	return s
 }
 
-func (aq *AutoBufferedBroker) storeToBufferPersist(m *message.Message) error {
-	to, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	conn, err := aq.pool.Acquire(to)
-	if err != nil {
-		zap.L().Error("unable to acquire db conn; message is lost", zap.Error(err), zap.String("tag", m.ChannelID))
-		return err
+func (aq *Mega) Post(m *message.Message) error {
+	if len(m.Payload) > quota.MaxMessageSize {
+		return ErrMessageIsTooLarge
 	}
 
-	defer conn.Release()
-
-	_, err = conn.Exec(
-		context.Background(),
-		"INSERT INTO messages (tag, msg_type, content) VALUES ($1, $2, $3)",
-		m.ChannelID,
-		m.Type,
-		m.Payload,
-	)
-
-	if err != nil {
-		zap.L().Error("message is lost due to pgxpool error", zap.Error(err), zap.String("tag", m.ChannelID))
-		return err
-	}
-
-	return nil
-}
-
-func (aq *AutoBufferedBroker) Post(m *message.Message) error {
-	if len(m.Payload) > GlobalQueueMaxMessageSize {
-		return errors.New("message is too big")
+	if len(m.Payload) == 0 {
+		return ErrMessageIsEmpty
 	}
 
 	streamHandler := aq.acquire(m.ChannelID)
 
 	online := streamHandler.online()
 	if online == 0 {
-		return aq.storeToBufferPersist(m)
+		return aq.keeper.Put(m)
 	}
 
 	switch m.Scope {
@@ -103,7 +85,7 @@ func (aq *AutoBufferedBroker) Post(m *message.Message) error {
 	return nil
 }
 
-func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *message.Message, err error) {
+func (aq *Mega) readBuffered(ctx context.Context, tag string) (m *message.Message, err error) {
 	conn, err := aq.pool.Acquire(ctx)
 	if err != nil {
 		zap.L().Error("unable to acquire db conn", zap.Error(err), zap.String("tag", tag))
@@ -136,7 +118,7 @@ func (aq *AutoBufferedBroker) readBuffered(ctx context.Context, tag string) (m *
 	return nm, nil
 }
 
-func (aq *AutoBufferedBroker) Listen(ctx context.Context, tag string) (m *message.Message) {
+func (aq *Mega) Listen(ctx context.Context, tag string) (m *message.Message) {
 	// dispatch buffered messages
 	m, err := aq.readBuffered(ctx, tag)
 	if err != nil && !errors.Is(err, ErrNoBufferedMessages) {
@@ -163,7 +145,7 @@ func (aq *AutoBufferedBroker) Listen(ctx context.Context, tag string) (m *messag
 	}
 }
 
-func (aq *AutoBufferedBroker) streamDispatch(ctx context.Context, tag string, target chan *message.Message) {
+func (aq *Mega) streamDispatch(ctx context.Context, tag string, target chan *message.Message) {
 	streamHandler := aq.acquire(tag)
 
 	queue := streamHandler.ch()
@@ -208,7 +190,7 @@ func (aq *AutoBufferedBroker) streamDispatch(ctx context.Context, tag string, ta
 	close(target)
 }
 
-func (aq *AutoBufferedBroker) ListenStream(ctx context.Context, tag string) chan *message.Message {
+func (aq *Mega) ListenStream(ctx context.Context, tag string) chan *message.Message {
 	c := make(chan *message.Message, 10)
 
 	go aq.streamDispatch(ctx, tag, c)
@@ -216,7 +198,7 @@ func (aq *AutoBufferedBroker) ListenStream(ctx context.Context, tag string) chan
 	return c
 }
 
-func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m message.Message, publishCurrent bool) {
+func (aq *Mega) repost(visited *set.Set[string], tag string, m message.Message, publishCurrent bool) {
 	if visited.Has(tag) {
 		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
@@ -240,7 +222,7 @@ func (aq *AutoBufferedBroker) repost(visited *set.Set[string], tag string, m mes
 	}
 }
 
-func (aq *AutoBufferedBroker) PostWithMixin(tag string, m *message.Message) error {
+func (aq *Mega) PostWithMixin(tag string, m *message.Message) error {
 	err := aq.Post(m)
 	if err != nil {
 		return err
@@ -250,7 +232,7 @@ func (aq *AutoBufferedBroker) PostWithMixin(tag string, m *message.Message) erro
 		return nil
 	}
 
-	go aq.repost(set.NewSet[string](nil), tag, *m, false)
+	go aq.repost(set.NewSet[string](), tag, *m, false)
 
 	return nil
 }
