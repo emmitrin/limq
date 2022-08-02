@@ -25,5 +25,5 @@ func (ea *exclusiveAccess) stop(key string) {
 }
 
 func newEA() *exclusiveAccess {
-	return &exclusiveAccess{access: set.NewSet[string](nil), mu: &sync.Mutex{}}
+	return &exclusiveAccess{access: set.NewSet[string](), mu: &sync.Mutex{}}
 }
