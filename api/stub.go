@@ -10,7 +10,7 @@ import (
 
 type Stub struct {
 	auth           *authenticator.A
-	bufferedBroker *broker.AutoBufferedBroker
+	bufferedBroker *broker.Mega
 	routes         *router.Router
 	ea             *exclusiveAccess
 }
@@ -24,7 +24,7 @@ var strApplicationJSON = []byte("application/json")
 func NewStub(pool *pgxpool.Pool, a *authenticator.A) *Stub {
 	s := &Stub{
 		auth:           a,
-		bufferedBroker: broker.NewAQ(pool, a.CreateMixinManager()),
+		bufferedBroker: broker.NewMega(pool, a.CreateMixinManager()),
 	}
 
 	r := router.New()
