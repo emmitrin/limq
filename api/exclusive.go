@@ -1,12 +1,12 @@
 package api
 
 import (
-	"limq/internal/set"
+	"github.com/emmitrin/util"
 	"sync"
 )
 
 type exclusiveAccess struct {
-	access *set.Set[string]
+	access *util.Set[string]
 	mu     *sync.Mutex
 }
 
@@ -25,5 +25,5 @@ func (ea *exclusiveAccess) stop(key string) {
 }
 
 func newEA() *exclusiveAccess {
-	return &exclusiveAccess{access: set.NewSet[string](), mu: &sync.Mutex{}}
+	return &exclusiveAccess{access: util.NewSet[string](), mu: &sync.Mutex{}}
 }

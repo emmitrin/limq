@@ -3,10 +3,10 @@ package broker
 import (
 	"context"
 	"errors"
+	"github.com/emmitrin/util"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"go.uber.org/zap"
-	"limq/internal/set"
 	"limq/message"
 	"limq/quota"
 	"limq/storage"
@@ -198,7 +198,7 @@ func (aq *Mega) ListenStream(ctx context.Context, tag string) chan *message.Mess
 	return c
 }
 
-func (aq *Mega) repost(visited *set.Set[string], tag string, m message.Message, publishCurrent bool) {
+func (aq *Mega) repost(visited *util.Set[string], tag string, m message.Message, publishCurrent bool) {
 	if visited.Has(tag) {
 		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
@@ -232,7 +232,7 @@ func (aq *Mega) PostWithMixin(tag string, m *message.Message) error {
 		return nil
 	}
 
-	go aq.repost(set.NewSet[string](), tag, *m, false)
+	go aq.repost(util.NewSet[string](), tag, *m, false)
 
 	return nil
 }

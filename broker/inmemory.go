@@ -2,8 +2,8 @@ package broker
 
 import (
 	"context"
+	"github.com/emmitrin/util"
 	"go.uber.org/zap"
-	"limq/internal/set"
 	"limq/message"
 	"limq/quota"
 	"sync"
@@ -123,7 +123,7 @@ func (gq *InMemory) QueueSize(tag string) int {
 	return len(s.ch())
 }
 
-func (gq *InMemory) repost(visited *set.Set[string], tag string, m message.Message, postToThis bool) {
+func (gq *InMemory) repost(visited *util.Set[string], tag string, m message.Message, postToThis bool) {
 	if visited.Has(tag) {
 		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
@@ -150,7 +150,7 @@ func (gq *InMemory) repost(visited *set.Set[string], tag string, m message.Messa
 func (gq *InMemory) PostImmediatelyWithMixins(tag string, m *message.Message) (ok bool) {
 	ok = gq.PostImmediately(m)
 
-	go gq.repost(set.NewSet[string](), tag, *m, false)
+	go gq.repost(util.NewSet[string](), tag, *m, false)
 
 	return
 }
