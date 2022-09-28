@@ -9,8 +9,8 @@ type stream interface {
 	// you should never send to ch() directly, use publish
 	ch() chan *message.Message
 
-	post(m *message.Message)
-	postOne(m *message.Message)
+	publish(m *message.Message)
+	publishOne(m *message.Message)
 
 	subscribe()
 	unsubscribe()

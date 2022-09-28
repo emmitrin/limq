@@ -31,8 +31,9 @@ func NewStub(pool *pgxpool.Pool, a *authenticator.A) *Stub {
 	s.routes = r
 
 	r.GET("/listen{access_key}", CorsMiddlewareAny(s.listen))
-	r.POST("/post{access_key}", CorsMiddlewareAny(s.post))
-	r.GET("/ws_listen{access_key}", CorsMiddlewareAny(s.listenWS))
+	r.POST("/publish{access_key}", CorsMiddlewareAny(s.publish))
+	r.GET("/subscribe{access_key}", CorsMiddlewareAny(s.listenWS))
+	//r.GET("/purge{access_key}", CorsMiddlewareAny(s.purge))
 
 	r.HandleOPTIONS = true
 	r.GlobalOPTIONS = CorsMiddlewareAny(func(ctx *fasthttp.RequestCtx) {

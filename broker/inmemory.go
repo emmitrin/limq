@@ -96,7 +96,7 @@ func (gq *InMemory) PostImmediately(m *message.Message) (ok bool) {
 func (gq *InMemory) Listen(ctx context.Context, tag string) (m *message.Message) {
 	streamHandler := gq.acquire(tag)
 
-	// todo make peer identification to solve the re-post issue
+	// todo make peer identification to solve the re-publish issue
 	streamHandler.subscribe()
 	defer streamHandler.unsubscribe()
 
@@ -125,7 +125,7 @@ func (gq *InMemory) QueueSize(tag string) int {
 
 func (gq *InMemory) repost(visited *util.Set[string], tag string, m message.Message, postToThis bool) {
 	if visited.Has(tag) {
-		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
+		zap.L().Warn("republish for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
 	}
 
@@ -135,7 +135,7 @@ func (gq *InMemory) repost(visited *util.Set[string], tag string, m message.Mess
 		ok := gq.PostImmediately(&m)
 
 		if !ok {
-			zap.L().Warn("unable to post to mixed-in broker", zap.String("chan_id", tag))
+			zap.L().Warn("unable to publish to mixed-in broker", zap.String("chan_id", tag))
 		}
 	}
 

@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
+func (stub *Stub) publish(ctx *fasthttp.RequestCtx) {
 	key := ctx.UserValue("access_key").(string)
 
 	defer ctx.SetContentTypeBytes(strApplicationJSON)
@@ -22,9 +22,9 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if !auth.Flags.CanPost() {
+	if !auth.Flags.CanPublish() {
 		setError(ctx, http.StatusForbidden)
-		writeError(ctx, CodeAuthenticationError, "no post permissions")
+		writeError(ctx, CodeAuthenticationError, "no publish permissions")
 
 		return
 	}
@@ -56,7 +56,7 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 		m.Payload = make([]byte, len(body))
 		copy(m.Payload, body)
 
-		err := stub.bufferedBroker.PostWithMixin(auth.Tag, m)
+		err := stub.bufferedBroker.PublishWithMixin(auth.Tag, m)
 
 		if err == nil {
 			response := struct{ hasCode }{}
@@ -75,13 +75,13 @@ func (stub *Stub) post(ctx *fasthttp.RequestCtx) {
 
 			} else {
 				response.Code = CodeUnknownError
-				response.StatusText = "Unable to post the message due to server error"
+				response.StatusText = "Unable to publish the message due to server error"
 
 			}
 
 			writeJSON(ctx, response)
 
-			zap.L().Error("unable to post the message", zap.Error(err))
+			zap.L().Error("unable to publish the message", zap.Error(err))
 		}
 	}
 }

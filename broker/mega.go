@@ -58,7 +58,7 @@ func (aq *Mega) acquire(tag string) stream {
 	return s
 }
 
-func (aq *Mega) Post(m *message.Message) error {
+func (aq *Mega) Publish(m *message.Message) error {
 	if len(m.Payload) > quota.MaxMessageSize {
 		return ErrMessageIsTooLarge
 	}
@@ -76,10 +76,10 @@ func (aq *Mega) Post(m *message.Message) error {
 
 	switch m.Scope {
 	case message.ScopeNotifyAll:
-		streamHandler.post(m)
+		streamHandler.publish(m)
 
 	case message.ScopeNotifyOne:
-		streamHandler.postOne(m)
+		streamHandler.publishOne(m)
 	}
 
 	return nil
@@ -198,19 +198,19 @@ func (aq *Mega) ListenStream(ctx context.Context, tag string) chan *message.Mess
 	return c
 }
 
-func (aq *Mega) repost(visited *util.Set[string], tag string, m message.Message, publishCurrent bool) {
+func (aq *Mega) republish(visited *util.Set[string], tag string, m message.Message, publishCurrent bool) {
 	if visited.Has(tag) {
-		zap.L().Warn("repost for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
+		zap.L().Warn("republish for mixed-in broker: circular dependency detected", zap.String("chan_id", tag))
 		return
 	}
 
 	m.ChannelID = tag
 
 	if publishCurrent {
-		err := aq.Post(&m)
+		err := aq.Publish(&m)
 
 		if err != nil {
-			zap.L().Warn("unable to post to mixed-in broker", zap.String("chan_id", tag), zap.Error(err))
+			zap.L().Warn("unable to publish to mixed-in broker", zap.String("chan_id", tag), zap.Error(err))
 		}
 	}
 
@@ -218,12 +218,12 @@ func (aq *Mega) repost(visited *util.Set[string], tag string, m message.Message,
 	tags := aq.mman.GetForwards(tag)
 
 	for _, t := range tags {
-		aq.repost(visited, t, m, true)
+		aq.republish(visited, t, m, true)
 	}
 }
 
-func (aq *Mega) PostWithMixin(tag string, m *message.Message) error {
-	err := aq.Post(m)
+func (aq *Mega) PublishWithMixin(tag string, m *message.Message) error {
+	err := aq.Publish(m)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func (aq *Mega) PostWithMixin(tag string, m *message.Message) error {
 		return nil
 	}
 
-	go aq.repost(util.NewSet[string](), tag, *m, false)
+	go aq.republish(util.NewSet[string](), tag, *m, false)
 
 	return nil
 }

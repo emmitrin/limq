@@ -11,17 +11,17 @@ type unbufferedDirectStream struct {
 	c       chan *message.Message
 }
 
-func (s *unbufferedDirectStream) postOne(m *message.Message) {
+func (s *unbufferedDirectStream) publishOne(m *message.Message) {
 	if s.online() == 0 {
-		panic("unbuffered stream postOne on zero subscribers")
+		panic("unbuffered stream publishOne on zero subscribers")
 	}
 
 	s.c <- m
 }
 
-func (s *unbufferedDirectStream) post(m *message.Message) {
+func (s *unbufferedDirectStream) publish(m *message.Message) {
 	if s.online() == 0 {
-		panic("unbuffered stream post on zero subscribers")
+		panic("unbuffered stream publish on zero subscribers")
 	}
 
 	// dummy repeated send

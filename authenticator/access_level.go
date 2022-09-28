@@ -12,7 +12,7 @@ const (
 type AccessLevel int
 
 func (al AccessLevel) CanListen() bool          { return al&AccessRead != 0 }
-func (al AccessLevel) CanPost() bool            { return al&AccessWrite != 0 }
+func (al AccessLevel) CanPublish() bool         { return al&AccessWrite != 0 }
 func (al AccessLevel) InfoRequestEnabled() bool { return al&AccessInfoEnabled != 0 }
 func (al AccessLevel) Active() bool             { return al&AccessSuspended == 0 }
 
