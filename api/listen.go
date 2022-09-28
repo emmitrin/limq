@@ -59,6 +59,8 @@ func (stub *Stub) listen(ctx *fasthttp.RequestCtx) {
 		}
 
 		ctx.SetContentType("application/x-octet-stream")
+		ctx.Response.Header.Set("X-Message-Scope", m.Scope.String())
+		ctx.Response.Header.Set("X-Message-Type", m.Type.String())
 
 		_, err := io.Copy(ctx, bytes.NewReader(m.Payload))
 		if err != nil {

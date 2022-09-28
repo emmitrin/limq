@@ -6,12 +6,22 @@ import (
 	"strings"
 )
 
+type Type int
+
 const (
-	TypeBinary = iota
+	TypeBinary Type = iota
 	TypeText
 )
 
-func ParseType(t string) (int, bool) {
+func (t Type) String() string {
+	if t == TypeText {
+		return "text"
+	}
+
+	return "binary"
+}
+
+func ParseType(t string) (Type, bool) {
 	if len(t) == 0 {
 		return TypeBinary, true
 	}
@@ -35,7 +45,7 @@ func ParseType(t string) (int, bool) {
 	}
 }
 
-func TypeToWebSocketType(t int) int {
+func TypeToWebSocketType(t Type) int {
 	switch t {
 	case TypeText:
 		return websocket.TextMessage

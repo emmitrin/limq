@@ -1,8 +1,8 @@
 package message
 
 type Message struct {
-	Type      int
-	Scope     int
+	Type      Type
+	Scope     Scope
 	ChannelID string
 	Payload   []byte
 }

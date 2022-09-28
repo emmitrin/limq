@@ -29,7 +29,10 @@ func (stub *Stub) publish(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	var typ, scope int
+	var (
+		typ   message.Type
+		scope message.Scope
+	)
 
 	{
 		ok := false

@@ -105,6 +105,10 @@ func (aq *Mega) readBuffered(ctx context.Context, tag string) (m *message.Messag
 
 	nm := &message.Message{}
 
+	// manually set scope to one
+	// buffered messages are returned only to the race-winner listener, by design
+	nm.Scope = message.ScopeNotifyOne
+
 	err = row.Scan(&nm.Type, &nm.Payload)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
