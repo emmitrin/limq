@@ -94,7 +94,13 @@ func (aq *Mega) readBuffered(ctx context.Context, tag string) (m *message.Messag
 
 	defer conn.Release()
 
-	row := conn.QueryRow(
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		zap.L().Error("unable to acquire db tx", zap.Error(err), zap.String("tag", tag))
+		return nil, err
+	}
+
+	row := tx.QueryRow(
 		ctx,
 		`DELETE FROM messages
 			WHERE id = (
@@ -111,11 +117,21 @@ func (aq *Mega) readBuffered(ctx context.Context, tag string) (m *message.Messag
 
 	err = row.Scan(&nm.Type, &nm.Payload)
 	if err != nil {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			zap.L().Error("unable to rollback db tx", zap.Error(rollbackErr))
+		}
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNoBufferedMessages
 		}
 
 		zap.L().Error("pgx error", zap.Error(err), zap.String("tag", tag))
+		return nil, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		zap.L().Error("unable to commit db tx", zap.Error(err), zap.String("tag", tag))
 		return nil, err
 	}
 
